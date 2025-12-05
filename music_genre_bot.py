@@ -40,30 +40,30 @@ class MusicGenreBot:
     def write_genre_to_file(self, file_path, genres):
         """Write genre metadata to the audio file"""
         try:
-            # Convert genres list to a single string
             genre_str = "; ".join(genres)
-            
-            # Try to handle MP3 files
+
             if file_path.lower().endswith('.mp3'):
                 try:
-                    # Try using EasyID3 first (easier interface)
-                    audio = EasyID3(file_path)
-                    audio['genre'] = genre_str
-                    audio.save()
+                    # Force ID3v2.3 with ISO-8859-1 encoding
+                    audio = ID3(file_path)
                 except:
-                    # Fallback to ID3 if EasyID3 fails
-                    try:
-                        audio = ID3(file_path)
-                    except:
-                        ID3().save(file_path)
-                        audio = ID3(file_path)
-                    
-                    audio['TCON'] = TCON(encoding=3, text=[genre_str])
-                    audio.save()
-            
+                    audio = ID3()
+
+                audio.delall("TCON")  # remove old genre to avoid conflicts
+
+                audio.add(
+                    TCON(
+                        encoding=0,  # ISO-8859-1 (Windows compatible)
+                        text=[genre_str]
+                    )
+                )
+
+                # Save as ID3v2.3 (critical for Windows Explorer)
+                audio.save(v2_version=3)
+
             return True
         except Exception as e:
-            print(f"Warning: Could not write genre to {file_path}: {str(e)}")
+            print(f"Warning: Could not write genre to {file_path}: {e}")
             return False
     
     def setup_ui(self):
