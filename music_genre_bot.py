@@ -58,8 +58,8 @@ class MusicGenreBot:
                     )
                 )
 
-                # Save as ID3v2.3 (critical for Windows Explorer)
-                audio.save(v2_version=3)
+                # Save as ID3v2.3 (critical for Windows Explorer) - pass filename
+                audio.save(file_path, v2_version=3)
 
             return True
         except Exception as e:
