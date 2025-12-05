@@ -3,6 +3,8 @@ from tkinter import ttk, messagebox, scrolledtext, filedialog
 import json
 import os
 from datetime import datetime
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import ID3, TIT2, TCON
 
 class MusicGenreBot:
     def __init__(self, root):
@@ -35,6 +37,35 @@ class MusicGenreBot:
         with open(self.data_file, 'w') as f:
             json.dump(self.songs, f, indent=2)
     
+    def write_genre_to_file(self, file_path, genres):
+        """Write genre metadata to the audio file"""
+        try:
+            # Convert genres list to a single string
+            genre_str = "; ".join(genres)
+            
+            # Try to handle MP3 files
+            if file_path.lower().endswith('.mp3'):
+                try:
+                    # Try using EasyID3 first (easier interface)
+                    audio = EasyID3(file_path)
+                    audio['genre'] = genre_str
+                    audio.save()
+                except:
+                    # Fallback to ID3 if EasyID3 fails
+                    try:
+                        audio = ID3(file_path)
+                    except:
+                        ID3().save(file_path)
+                        audio = ID3(file_path)
+                    
+                    audio['TCON'] = TCON(encoding=3, text=[genre_str])
+                    audio.save()
+            
+            return True
+        except Exception as e:
+            print(f"Warning: Could not write genre to {file_path}: {str(e)}")
+            return False
+    
     def setup_ui(self):
         """Create the user interface"""
         # Style
@@ -60,14 +91,14 @@ class MusicGenreBot:
         self.song_name_entry = ttk.Entry(input_frame, width=40)
         self.song_name_entry.grid(row=0, column=1, pady=5, padx=5)
         
-        ttk.Label(input_frame, text="Artist:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(input_frame, text="Artist (optional):").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.artist_entry = ttk.Entry(input_frame, width=40)
         self.artist_entry.grid(row=1, column=1, pady=5, padx=5)
         
         ttk.Label(input_frame, text="Genres (select multiple):").grid(row=2, column=0, sticky=tk.NW, pady=5)
         
-        # Genre selection frame
-        genre_frame = ttk.Frame(input_frame)
+        # Genre selection frame with border
+        genre_frame = ttk.LabelFrame(input_frame, text="Check the genres that apply", padding=5)
         genre_frame.grid(row=2, column=1, sticky=tk.W, padx=5)
         
         self.genre_vars = {}
@@ -75,7 +106,7 @@ class MusicGenreBot:
             var = tk.BooleanVar()
             self.genre_vars[genre] = var
             checkbox = ttk.Checkbutton(genre_frame, text=genre, variable=var)
-            checkbox.grid(row=i//3, column=i%3, sticky=tk.W, padx=5)
+            checkbox.grid(row=i//3, column=i%3, sticky=tk.W, padx=5, pady=3)
         
         # Buttons frame
         button_frame = ttk.Frame(input_frame)
@@ -135,27 +166,31 @@ class MusicGenreBot:
             messagebox.showwarning("Input Error", "Please enter a song name!")
             return
         
-        if not artist:
-            messagebox.showwarning("Input Error", "Please enter an artist name!")
-            return
-        
         if not selected_genres:
-            messagebox.showwarning("Input Error", "Please select at least one genre!")
+            messagebox.showwarning("Input Error", "Please select at least one genre by checking the boxes!")
             return
         
-        # Create song key
-        song_key = f"{song_name} - {artist}"
+        # Create song key - just use song name if no artist
+        if artist:
+            song_key = f"{song_name} - {artist}"
+        else:
+            song_key = song_name
         
         # Add to database
-        self.songs[song_key] = {
+        song_data = {
             "name": song_name,
-            "artist": artist,
             "genres": selected_genres,
             "added_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         
+        # Add artist only if provided
+        if artist:
+            song_data["artist"] = artist
+        
+        self.songs[song_key] = song_data
+        
         self.save_songs()
-        messagebox.showinfo("Success", f"Song '{song_name}' has been added/updated!")
+        messagebox.showinfo("Success", f"Song '{song_name}' has been added/updated with {len(selected_genres)} genre(s)!")
         self.clear_fields()
         self.refresh_display()
     
@@ -229,14 +264,8 @@ class MusicGenreBot:
             song_frame = ttk.LabelFrame(scrollable_frame, text=f"📄 {song_name}", padding=10)
             song_frame.pack(fill=tk.X, pady=5)
             
-            # Artist entry
-            ttk.Label(song_frame, text="Artist:").grid(row=0, column=0, sticky=tk.W, pady=5)
-            artist_entry = ttk.Entry(song_frame, width=40)
-            artist_entry.insert(0, artist)
-            artist_entry.grid(row=0, column=1, pady=5, padx=5)
-            
             # Genre checkboxes
-            ttk.Label(song_frame, text="Select Genres:").grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=5)
+            ttk.Label(song_frame, text="Select Genres:").grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=5)
             
             genre_vars = {}
             for i, genre in enumerate(self.genres):
@@ -247,7 +276,6 @@ class MusicGenreBot:
             
             import_data[file_path] = {
                 "song_name": song_name,
-                "artist_entry": artist_entry,
                 "genre_vars": genre_vars
             }
         
@@ -298,22 +326,19 @@ class MusicGenreBot:
             saved_count = 0
             for file_path, data in import_data.items():
                 song_name = data["song_name"]
-                artist = data["artist_entry"].get().strip()
                 selected_genres = [genre for genre, var in data["genre_vars"].items() if var.get()]
-                
-                if not artist:
-                    messagebox.showwarning("Missing Info", f"Please enter artist for '{song_name}'")
-                    return
                 
                 if not selected_genres:
                     messagebox.showwarning("Missing Info", f"Please select at least one genre for '{song_name}'")
                     return
                 
-                # Add to database
-                song_key = f"{song_name} - {artist}"
+                # Write genre metadata to the file
+                self.write_genre_to_file(file_path, selected_genres)
+                
+                # Add to database with just song name (no artist required)
+                song_key = song_name
                 self.songs[song_key] = {
                     "name": song_name,
-                    "artist": artist,
                     "genres": selected_genres,
                     "added_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "file_path": file_path
@@ -321,7 +346,7 @@ class MusicGenreBot:
                 saved_count += 1
             
             self.save_songs()
-            messagebox.showinfo("Success", f"Successfully imported {saved_count} song(s)!")
+            messagebox.showinfo("Success", f"Successfully imported {saved_count} song(s)!\nGenre metadata has been written to the files.")
             self.refresh_display()
             import_window.destroy()
         
@@ -337,7 +362,8 @@ class MusicGenreBot:
         # Add songs
         for song_key, song_data in sorted(self.songs.items()):
             genres_str = ", ".join(song_data["genres"])
-            self.tree.insert("", tk.END, values=(song_data["name"], song_data["artist"], genres_str))
+            artist = song_data.get("artist", "-")  # Use "-" if no artist
+            self.tree.insert("", tk.END, values=(song_data["name"], artist, genres_str))
         
         # Update status
         total_songs = len(self.songs)
@@ -353,10 +379,15 @@ class MusicGenreBot:
         item = selected[0]
         values = self.tree.item(item)['values']
         song_name = values[0]
-        artist = values[1]
-        song_key = f"{song_name} - {artist}"
         
-        if messagebox.askyesno("Confirm", f"Delete '{song_name}' by {artist}?"):
+        # Find the actual song key
+        song_key = None
+        for key in self.songs.keys():
+            if self.songs[key]["name"] == song_name:
+                song_key = key
+                break
+        
+        if song_key and messagebox.askyesno("Confirm", f"Delete '{song_name}'?"):
             del self.songs[song_key]
             self.save_songs()
             self.refresh_display()
@@ -372,8 +403,16 @@ class MusicGenreBot:
         item = selected[0]
         values = self.tree.item(item)['values']
         song_name = values[0]
-        artist = values[1]
-        song_key = f"{song_name} - {artist}"
+        
+        # Find the actual song key
+        song_key = None
+        for key in self.songs.keys():
+            if self.songs[key]["name"] == song_name:
+                song_key = key
+                break
+        
+        if not song_key:
+            return
         
         song_data = self.songs[song_key]
         
@@ -382,7 +421,7 @@ class MusicGenreBot:
         self.song_name_entry.insert(0, song_data["name"])
         
         self.artist_entry.delete(0, tk.END)
-        self.artist_entry.insert(0, song_data["artist"])
+        self.artist_entry.insert(0, song_data.get("artist", ""))  # Empty if no artist
         
         # Reset all checkboxes
         for var in self.genre_vars.values():
