@@ -251,9 +251,47 @@ class MusicGenreBot:
                 "genre_vars": genre_vars
             }
         
-        # Bottom buttons
+        # Bottom buttons and batch apply section
         button_frame = ttk.Frame(import_window)
         button_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Batch apply section
+        batch_frame = ttk.LabelFrame(button_frame, text="Batch Apply Genres to All", padding=10)
+        batch_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(batch_frame, text="Select genres to apply to ALL songs:").pack(anchor=tk.W, pady=5)
+        
+        batch_genre_frame = ttk.Frame(batch_frame)
+        batch_genre_frame.pack(anchor=tk.W, pady=5)
+        
+        batch_genre_vars = {}
+        for i, genre in enumerate(self.genres):
+            var = tk.BooleanVar()
+            batch_genre_vars[genre] = var
+            checkbox = ttk.Checkbutton(batch_genre_frame, text=genre, variable=var)
+            checkbox.grid(row=i//3, column=i%3, sticky=tk.W, padx=5)
+        
+        def apply_batch_genres():
+            """Apply batch genres to all songs"""
+            selected_batch_genres = [genre for genre, var in batch_genre_vars.items() if var.get()]
+            
+            if not selected_batch_genres:
+                messagebox.showwarning("No Genres", "Please select at least one genre to apply!")
+                return
+            
+            # Apply to all songs
+            for file_path, data in import_data.items():
+                for genre, var in data["genre_vars"].items():
+                    if genre in selected_batch_genres:
+                        var.set(True)
+            
+            messagebox.showinfo("Success", f"Applied {len(selected_batch_genres)} genre(s) to all songs!")
+        
+        ttk.Button(batch_frame, text="Apply to All Songs", command=apply_batch_genres).pack(side=tk.LEFT, padx=5)
+        
+        # Save and cancel buttons
+        action_frame = ttk.Frame(button_frame)
+        action_frame.pack(fill=tk.X, pady=10)
         
         def save_imports():
             """Save all imported songs"""
@@ -287,8 +325,8 @@ class MusicGenreBot:
             self.refresh_display()
             import_window.destroy()
         
-        ttk.Button(button_frame, text="Save All Songs", command=save_imports).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Cancel", command=import_window.destroy).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Save All Songs", command=save_imports).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Cancel", command=import_window.destroy).pack(side=tk.LEFT, padx=5)
     
     def refresh_display(self):
         """Refresh the song display list"""
